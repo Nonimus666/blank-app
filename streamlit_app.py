@@ -69,7 +69,7 @@ details.grp > summary:hover .block { transform:translateY(-2px); filter:brightne
 [class*="st-key-panel_"] { background:rgba(128,128,128,.07); border-radius:14px; padding:14px 16px; margin:2px 0 18px 0;
     animation:slidein .25s ease-out; }
 @keyframes slidein { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:none; } }
-.panel-line { border:none; border-top:1px solid rgba(128,128,128,.25); margin:-10px 0 8px 0; }
+[class*="st-key-phead_"] { border-bottom:1px solid rgba(128,128,128,.25); padding-bottom:6px; }
 .tname { font-size:1rem; font-weight:500; }
 .tmeta { opacity:.65; font-size:.85rem; }
 .countdown { font-variant-numeric:tabular-nums; font-weight:600; }
@@ -293,14 +293,14 @@ def duration_inputs(prefix, hours=1, minutes=0):
 def day_panel(day: date, day_tasks):
     iso = day.isoformat()
     with st.container(key=f"panel_{iso}"):
-        c_head, c_close = st.columns([12, 1], vertical_alignment="center")
-        c_head.markdown(
-            f'<div class="tmeta">{DAYS[day.weekday()]} {day:%d-%m}</div>', unsafe_allow_html=True
-        )
-        if c_close.button("x", key=f"close_{iso}", help="Sluit deze dag"):
-            st.session_state.open_day = None
-            st.rerun()
-        st.markdown('<hr class="panel-line">', unsafe_allow_html=True)
+        with st.container(key=f"phead_{iso}"):
+            c_head, c_close = st.columns([12, 1], vertical_alignment="center")
+            c_head.markdown(
+                f'<div class="tmeta">{DAYS[day.weekday()]} {day:%d-%m}</div>', unsafe_allow_html=True
+            )
+            if c_close.button("x", key=f"close_{iso}", help="Sluit deze dag"):
+                st.session_state.open_day = None
+                st.rerun()
         if not day_tasks:
             st.markdown('<div class="tmeta">Nog geen taken op deze dag.</div>', unsafe_allow_html=True)
 
