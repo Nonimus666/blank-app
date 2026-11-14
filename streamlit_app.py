@@ -26,7 +26,7 @@ CSS = """
 @media (max-width: 640px) { :root { --bw: 26px; --bh: 24px; } }
 
 /* ---- blokken ---- */
-.day-blocks { display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center; min-height:44px; }
+.day-blocks { display:flex; flex-wrap:wrap; gap:10px 3px; align-items:center; min-height:44px; }
 details.grp { position:relative; }
 details.grp > summary { list-style:none; cursor:pointer; display:flex; gap:3px; outline:none; }
 details.grp > summary::-webkit-details-marker { display:none; }
@@ -40,7 +40,7 @@ details.grp > summary::-webkit-details-marker { display:none; }
 .block.running { border:2px solid var(--yellow); }
 details.grp > summary:hover .block { transform:translateY(-2px); filter:brightness(1.07); }
 .none { opacity:.35; font-size:.9rem; }
-.today { font-size:.72rem; opacity:.6; border:1px solid var(--open); border-radius:999px; padding:1px 8px; }
+.today { margin-right:9px; font-size:.72rem; opacity:.6; border:1px solid var(--open); border-radius:999px; padding:1px 8px; }
 
 /* ---- pop-up boven de blokken ---- */
 .tip { position:absolute; bottom:calc(100% + 10px); left:0; z-index:60; min-width:190px; max-width:260px;
