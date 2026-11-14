@@ -2,7 +2,9 @@ import json
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="Weekoverzicht productiviteit", layout="centered")
@@ -41,8 +43,53 @@ CSS = f"""
 """
 
 
+def now() -> datetime:
+    """Huidige tijd in Nederland (de online server draait anders op UTC)."""
+    return datetime.now(ZoneInfo("Europe/Amsterdam")).replace(tzinfo=None)
+
+
+# ---------- inloggen ----------
+def require_password():
+    """Vraagt om een wachtwoord als er een is ingesteld (online). Lokaal: geen wachtwoord."""
+    try:
+        password = st.secrets["app_password"]
+    except (KeyError, FileNotFoundError):
+        return
+    if st.session_state.get("ingelogd"):
+        return
+    st.title("Inloggen")
+    with st.form("login"):
+        entered = st.text_input("Wachtwoord", type="password")
+        if st.form_submit_button("Open") and entered == password:
+            st.session_state.ingelogd = True
+            st.rerun()
+        elif entered:
+            st.error("Wachtwoord klopt niet.")
+    st.stop()
+
+
 # ---------- opslag ----------
+# Online: Supabase (database, bewaart alles blijvend).
+# Lokaal zonder instellingen: een bestandje tasks.json naast de app.
+def supabase_config():
+    try:
+        sb = st.secrets["supabase"]
+        return sb["url"].rstrip("/") + "/rest/v1/tasks", {
+            "apikey": sb["key"],
+            "Authorization": f"Bearer {sb['key']}",
+            "Content-Type": "application/json",
+        }
+    except (KeyError, FileNotFoundError):
+        return None
+
+
 def load_tasks():
+    cfg = supabase_config()
+    if cfg:
+        url, headers = cfg
+        r = requests.get(url, headers=headers, params={"select": "*"}, timeout=15)
+        r.raise_for_status()
+        return r.json()
     if DATA_FILE.exists():
         try:
             return json.loads(DATA_FILE.read_text())
@@ -51,20 +98,41 @@ def load_tasks():
     return []
 
 
-def save_tasks(tasks):
+def _save_local(tasks):
     DATA_FILE.write_text(json.dumps(tasks, indent=2))
 
 
+def add_task(task):
+    cfg = supabase_config()
+    if cfg:
+        url, headers = cfg
+        requests.post(url, headers=headers, json=task, timeout=15).raise_for_status()
+    else:
+        _save_local(load_tasks() + [task])
+
+
 def update_task(task_id, **changes):
-    tasks = load_tasks()
-    for t in tasks:
-        if t["id"] == task_id:
-            t.update(changes)
-    save_tasks(tasks)
+    cfg = supabase_config()
+    if cfg:
+        url, headers = cfg
+        requests.patch(
+            url, headers=headers, params={"id": f"eq.{task_id}"}, json=changes, timeout=15
+        ).raise_for_status()
+    else:
+        tasks = load_tasks()
+        for t in tasks:
+            if t["id"] == task_id:
+                t.update(changes)
+        _save_local(tasks)
 
 
 def delete_task(task_id):
-    save_tasks([t for t in load_tasks() if t["id"] != task_id])
+    cfg = supabase_config()
+    if cfg:
+        url, headers = cfg
+        requests.delete(url, headers=headers, params={"id": f"eq.{task_id}"}, timeout=15).raise_for_status()
+    else:
+        _save_local([t for t in load_tasks() if t["id"] != task_id])
 
 
 # ---------- helpers ----------
@@ -90,15 +158,15 @@ def finish(task, in_time_required=True):
     status = "done"
     if task.get("started_at"):
         deadline = datetime.fromisoformat(task["started_at"]) + timedelta(hours=task["hours"])
-        if datetime.now() > deadline:
+        if now() > deadline:
             status = "late"
-    update_task(task["id"], status=status, finished_at=datetime.now().isoformat())
+    update_task(task["id"], status=status, finished_at=now().isoformat())
 
 
 @st.fragment(run_every="1s")
 def countdown(task):
     deadline = datetime.fromisoformat(task["started_at"]) + timedelta(hours=task["hours"])
-    left = (deadline - datetime.now()).total_seconds()
+    left = (deadline - now()).total_seconds()
     over = left < 0
     secs = int(abs(left))
     text = f"{secs // 3600}:{secs % 3600 // 60:02d}:{secs % 60:02d}"
@@ -112,9 +180,10 @@ def countdown(task):
 
 # ---------- state ----------
 if "week_start" not in st.session_state:
-    st.session_state.week_start = monday_of(date.today())
+    st.session_state.week_start = monday_of(now().date())
 
 st.markdown(CSS, unsafe_allow_html=True)
+require_password()
 st.title("Weekoverzicht")
 
 tasks = load_tasks()
@@ -156,7 +225,7 @@ for day in visible:
     row = "".join(
         blocks_html(t, running=bool(t.get("started_at"))) for t in day_tasks
     ) or '<span class="empty">geen taken</span>'
-    today_mark = " (vandaag)" if day == date.today() else ""
+    today_mark = " (vandaag)" if day == now().date() else ""
     st.markdown(
         f'<div class="day-row"><div class="day-name">{DAYS[day.weekday()]}{today_mark}</div>'
         f'<div class="blocks">{row}</div></div>',
@@ -176,13 +245,13 @@ for day in visible:
                     countdown(t)
             else:
                 if c_time.button("Start timer", key=f"start_{t['id']}"):
-                    update_task(t["id"], started_at=datetime.now().isoformat())
+                    update_task(t["id"], started_at=now().isoformat())
                     st.rerun()
             if c_a.button("Gelukt", key=f"done_{t['id']}", type="primary"):
                 finish(t)
                 st.rerun()
             if c_b.button("Niet gelukt", key=f"late_{t['id']}"):
-                update_task(t["id"], status="late", finished_at=datetime.now().isoformat())
+                update_task(t["id"], status="late", finished_at=now().isoformat())
                 st.rerun()
         else:
             label = "Op tijd afgerond" if t["status"] == "done" else "Niet op tijd afgerond"
@@ -199,8 +268,7 @@ for day in visible:
             title = st.text_input("Taak")
             hours = st.number_input("Binnen hoeveel uur af? (1 blok = 1 uur)", 0.5, 12.0, 2.0, 0.5)
             if st.form_submit_button("Toevoegen") and title.strip():
-                tasks = load_tasks()
-                tasks.append(
+                add_task(
                     {
                         "id": uuid.uuid4().hex,
                         "date": day.isoformat(),
@@ -211,7 +279,6 @@ for day in visible:
                         "finished_at": None,
                     }
                 )
-                save_tasks(tasks)
                 st.rerun()
     st.divider()
 
