@@ -1,6 +1,7 @@
 import html
 import json
 import uuid
+import zlib
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -90,13 +91,19 @@ details.grp > summary:hover .block { transform:translateY(-2px); filter:brightne
 }
 
 /* ---- wis-kruisje: grijs, ronde uiteinden, rood bij muis erop ---- */
-:is([class*="st-key-del_"], [class*="st-key-close_"]) button { width:32px; min-height:32px; padding:0; border:none; background-color:transparent;
+:is([class*="st-key-del_"], [class*="st-key-close_"], [class*="st-key-up_"], [class*="st-key-down_"]) button { width:32px; min-height:32px; padding:0; border:none; background-color:transparent;
     background-repeat:no-repeat; background-position:center; background-size:16px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E");
     transition:background-color .15s; }
 :is([class*="st-key-del_"], [class*="st-key-close_"]) button:hover { background-color:rgba(229,72,77,.12);
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e5484d' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E"); }
-:is([class*="st-key-del_"], [class*="st-key-close_"]) button p { display:none; }
+:is([class*="st-key-del_"], [class*="st-key-close_"], [class*="st-key-up_"], [class*="st-key-down_"]) button p { display:none; }
+
+/* ---- pijltjes om taken te verplaatsen: subtiel grijs ---- */
+[class*="st-key-up_"] button { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 15l6-6 6 6'/%3E%3C/svg%3E"); }
+[class*="st-key-down_"] button { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); }
+[class*="st-key-up_"] button:hover:not(:disabled), [class*="st-key-down_"] button:hover:not(:disabled) { background-color:rgba(128,128,128,.15); }
+[class*="st-key-up_"] button:disabled, [class*="st-key-down_"] button:disabled { opacity:.25; }
 
 .legend { display:flex; gap:20px; font-size:.85rem; opacity:.8; margin:4px 0 12px 0; flex-wrap:wrap; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
@@ -258,6 +265,15 @@ def group_html(task):
     return f'<details class="grp" name="tip"><summary>{blocks}</summary>{tip}</details>'
 
 
+SWAP_FIELDS = ("title", "hours", "status", "started_at", "finished_at")
+
+
+def swap_tasks(a, b):
+    """Wissel twee taken van plek door hun inhoud om te wisselen (de volgorde volgt de rij)."""
+    update_task(a["id"], **{f: b.get(f) for f in SWAP_FIELDS})
+    update_task(b["id"], **{f: a.get(f) for f in SWAP_FIELDS})
+
+
 def finish(task):
     """Markeer als gelukt. Als de timer liep en de deadline verstreken is -> geel."""
     status = "done"
@@ -304,9 +320,20 @@ def day_panel(day: date, day_tasks):
         if not day_tasks:
             st.markdown('<div class="tmeta">Nog geen taken op deze dag.</div>', unsafe_allow_html=True)
 
-        for t in day_tasks:
+        for i, t in enumerate(day_tasks):
             label, _ = status_text(t)
-            c_info, c_del = st.columns([12, 1], vertical_alignment="center")
+            if len(day_tasks) > 1:
+                c_info, c_up, c_down, c_del = st.columns([9, 1, 1, 1], vertical_alignment="center")
+                if c_up.button("^", key=f"up_{t['id']}", help="Verplaats omhoog", disabled=i == 0):
+                    swap_tasks(t, day_tasks[i - 1])
+                    st.rerun()
+                if c_down.button(
+                    "v", key=f"down_{t['id']}", help="Verplaats omlaag", disabled=i == len(day_tasks) - 1
+                ):
+                    swap_tasks(t, day_tasks[i + 1])
+                    st.rerun()
+            else:
+                c_info, c_del = st.columns([12, 1], vertical_alignment="center")
             c_info.markdown(
                 f'<div class="tname">{html.escape(t["title"])}</div>'
                 f'<div class="tmeta">{fmt_duration(t["hours"])} &middot; {label}</div>',
@@ -335,11 +362,13 @@ def day_panel(day: date, day_tasks):
                 st.rerun()
 
             with d.popover("Wijzig", width="stretch"):
-                with st.form(f"edit_{t['id']}"):
-                    new_title = st.text_input("Taak", t["title"], key=f"edit_title_{t['id']}")
+                content = "|".join([str(t["title"]), str(t["hours"])])
+                ek = t["id"] + "_" + format(zlib.crc32(content.encode()), "x")
+                with st.form(f"edit_{ek}"):
+                    new_title = st.text_input("Taak", t["title"], key=f"edit_title_{ek}")
                     mins = quarters(t["hours"]) * 15
                     snapped = min(MINUTE_CHOICES, key=lambda x: abs(x - mins % 60))
-                    new_hours = duration_inputs(f"edit_{t['id']}", mins // 60, snapped)
+                    new_hours = duration_inputs(f"edit_{ek}", mins // 60, snapped)
                     if st.form_submit_button("Opslaan") and new_title.strip() and new_hours > 0:
                         update_task(t["id"], title=new_title.strip(), hours=new_hours)
                         st.rerun()
