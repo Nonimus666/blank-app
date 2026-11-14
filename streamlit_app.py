@@ -69,6 +69,7 @@ details.grp > summary:hover .block { transform:translateY(-2px); filter:brightne
 [class*="st-key-panel_"] { background:rgba(128,128,128,.07); border-radius:14px; padding:14px 16px; margin:2px 0 18px 0;
     animation:slidein .25s ease-out; }
 @keyframes slidein { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:none; } }
+.panel-line { border:none; border-top:1px solid rgba(128,128,128,.25); margin:-10px 0 8px 0; }
 .tname { font-size:1rem; font-weight:500; }
 .tmeta { opacity:.65; font-size:.85rem; }
 .countdown { font-variant-numeric:tabular-nums; font-weight:600; }
@@ -89,13 +90,13 @@ details.grp > summary:hover .block { transform:translateY(-2px); filter:brightne
 }
 
 /* ---- wis-kruisje: grijs, ronde uiteinden, rood bij muis erop ---- */
-[class*="st-key-del_"] button { width:32px; min-height:32px; padding:0; border:none; background-color:transparent;
+:is([class*="st-key-del_"], [class*="st-key-close_"]) button { width:32px; min-height:32px; padding:0; border:none; background-color:transparent;
     background-repeat:no-repeat; background-position:center; background-size:16px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E");
     transition:background-color .15s; }
-[class*="st-key-del_"] button:hover { background-color:rgba(229,72,77,.12);
+:is([class*="st-key-del_"], [class*="st-key-close_"]) button:hover { background-color:rgba(229,72,77,.12);
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e5484d' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E"); }
-[class*="st-key-del_"] button p { display:none; }
+:is([class*="st-key-del_"], [class*="st-key-close_"]) button p { display:none; }
 
 .legend { display:flex; gap:20px; font-size:.85rem; opacity:.8; margin:4px 0 12px 0; flex-wrap:wrap; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
@@ -292,6 +293,14 @@ def duration_inputs(prefix, hours=1, minutes=0):
 def day_panel(day: date, day_tasks):
     iso = day.isoformat()
     with st.container(key=f"panel_{iso}"):
+        c_head, c_close = st.columns([12, 1], vertical_alignment="center")
+        c_head.markdown(
+            f'<div class="tmeta">{DAYS[day.weekday()]} {day:%d-%m}</div>', unsafe_allow_html=True
+        )
+        if c_close.button("x", key=f"close_{iso}", help="Sluit deze dag"):
+            st.session_state.open_day = None
+            st.rerun()
+        st.markdown('<hr class="panel-line">', unsafe_allow_html=True)
         if not day_tasks:
             st.markdown('<div class="tmeta">Nog geen taken op deze dag.</div>', unsafe_allow_html=True)
 
